@@ -1,11 +1,14 @@
 import { supabase } from './supabase';
 
+export type UserRole = 'teacher' | 'student';
+
 export interface UserAccess {
   user_id: string;
   email: string;
   status: 'pending' | 'approved' | 'revoked';
   trial_ends_at: string | null;
   requested_at: string;
+  role: UserRole;
 }
 
 export async function getMyAccess(userId: string): Promise<UserAccess | null> {
@@ -15,9 +18,9 @@ export async function getMyAccess(userId: string): Promise<UserAccess | null> {
   return data ?? null;
 }
 
-export async function createAccessRequest(userId: string, email: string): Promise<void> {
+export async function createAccessRequest(userId: string, email: string, role: UserRole = 'teacher'): Promise<void> {
   if (!supabase) return;
-  await supabase.from('user_access').insert({ user_id: userId, email, status: 'pending' });
+  await supabase.from('user_access').insert({ user_id: userId, email, status: 'pending', role });
 }
 
 export async function getAllAccess(): Promise<UserAccess[]> {

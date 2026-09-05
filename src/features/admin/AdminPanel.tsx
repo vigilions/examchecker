@@ -81,6 +81,7 @@ export function AdminPanel({ adminEmail }: AdminPanelProps) {
               <thead>
                 <tr className="border-b border-ink-200 dark:border-ink-800 bg-ink-50 dark:bg-ink-800/50">
                   <th className={th}>Email</th>
+                  <th className={th}>Role</th>
                   <th className={th}>Status</th>
                   <th className={th}>Trial Ends</th>
                   <th className={th}>Requested</th>
@@ -95,6 +96,9 @@ export function AdminPanel({ adminEmail }: AdminPanelProps) {
                   <tr key={u.user_id} className="hover:bg-ink-50 dark:hover:bg-ink-800/30 transition-colors">
                     <td className="px-5 py-4 text-ink-800 dark:text-ink-200 font-medium truncate max-w-[200px]">
                       {u.email}
+                    </td>
+                    <td className="px-5 py-4 text-ink-500 dark:text-ink-400 capitalize">
+                      {u.role ?? 'teacher'}
                     </td>
                     <td className="px-5 py-4">
                       <Badge className={STATUS_STYLES[u.status]}>
