@@ -49,7 +49,7 @@ function toggleSet<T>(set: Set<T>, val: T): Set<T> {
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
-export function HistoryView({ userId = '' }: { userId?: string }) {
+export function HistoryView({ userId = '', role = 'teacher' }: { userId?: string; role?: 'teacher' | 'student' }) {
   const { hfApiKey, geminiApiKey } = useExam();
   const histKey = storageKeys.history(userId);
   const [records, setRecords] = useState<HistoryRecord[]>(() => readJson<HistoryRecord[]>(histKey, []));
@@ -58,7 +58,8 @@ export function HistoryView({ userId = '' }: { userId?: string }) {
   const [practiceDeleteTarget, setPracticeDeleteTarget] = useState<HistoryRecord | null>(null);
   const [practiceDeleteInput, setPracticeDeleteInput] = useState('');
 
-  const [view, setView] = useState<'history' | 'practice' | 'trash'>('history');
+  // Students only ever see their own practice attempts — no exam archive or trash.
+  const [view, setView] = useState<'history' | 'practice' | 'trash'>(role === 'student' ? 'practice' : 'history');
   const [trashRecords, setTrashRecords] = useState<TrashEntry[]>([]);
   const [permDeleteTarget, setPermDeleteTarget] = useState<TrashEntry | null>(null);
   const [permDeleteInput, setPermDeleteInput] = useState('');
@@ -236,30 +237,32 @@ export function HistoryView({ userId = '' }: { userId?: string }) {
       )}
 
       <div className="max-w-5xl mx-auto animate-fade-in">
-        {/* View toggle */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setView('history')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'history' ? 'bg-accent-700 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
-          >
-            Archive
-            {records.length > 0 && <span className="ml-1.5 text-xs opacity-75">({records.length})</span>}
-          </button>
-          <button
-            onClick={() => { setView('practice'); setSelectedId(null); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'practice' ? 'bg-accent-700 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
-          >
-            Practice
-            {practiceRecords.length > 0 && <span className="ml-1.5 text-xs opacity-75">({practiceRecords.length})</span>}
-          </button>
-          <button
-            onClick={() => setView('trash')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'trash' ? 'bg-red-600 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
-          >
-            Trash
-            {trashRecords.length > 0 && <span className="ml-1.5 text-xs opacity-75">({trashRecords.length})</span>}
-          </button>
-        </div>
+        {/* View toggle — students only have Practice, so there's nothing to switch between */}
+        {role !== 'student' && (
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setView('history')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'history' ? 'bg-accent-700 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
+            >
+              Archive
+              {records.length > 0 && <span className="ml-1.5 text-xs opacity-75">({records.length})</span>}
+            </button>
+            <button
+              onClick={() => { setView('practice'); setSelectedId(null); }}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'practice' ? 'bg-accent-700 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
+            >
+              Practice
+              {practiceRecords.length > 0 && <span className="ml-1.5 text-xs opacity-75">({practiceRecords.length})</span>}
+            </button>
+            <button
+              onClick={() => setView('trash')}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${view === 'trash' ? 'bg-red-600 text-white' : 'bg-white dark:bg-ink-900 text-ink-600 dark:text-ink-400 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800'}`}
+            >
+              Trash
+              {trashRecords.length > 0 && <span className="ml-1.5 text-xs opacity-75">({trashRecords.length})</span>}
+            </button>
+          </div>
+        )}
 
         {/* ── Practice panel ──────────────────────────────────────────────── */}
         {view === 'practice' && (

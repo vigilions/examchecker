@@ -1,12 +1,13 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, supabaseError } from '../services/data/supabase';
-import { getMyAccess, createAccessRequest } from '../services/data/access';
+import { getMyAccess, createAccessRequest, type UserRole } from '../services/data/access';
 import { env } from '../config/env';
+import { readString, storageKeys } from '../services/storage';
 import { ExamProvider, useExam, useExamDispatch } from '../context/ExamContext';
 import { PracticeProvider, hasPracticeInProgress } from '../context/PracticeContext';
 import type { ExamSession } from '../types';
-import { AppShell, type NavTab } from './AppShell';
+import { AppShell, TOOL_TABS, type NavTab } from './AppShell';
 import { PendingScreen, RevokedScreen, ExpiredScreen } from './AccessScreens';
 import { useDarkMode } from './useDarkMode';
 import { AuthGate } from '../features/auth/AuthGate';
@@ -78,10 +79,20 @@ interface AppInnerProps {
   dark: boolean;
   setDark: (v: boolean) => void;
   isAdmin?: boolean;
+  role: UserRole;
   banner?: React.ReactNode;
 }
 
-function AppInner({ session, dark, setDark, isAdmin, banner }: AppInnerProps) {
+// Student accounts only get the self-practice loop — the exam-grading tools
+// (Setup/Grade/Report/Analytics/Bank/Paper Builder) stay teacher-only for now.
+const STUDENT_BASE_TABS: NavTab[] = [
+  { id: 'history', label: 'History', icon: 'history' },
+];
+const STUDENT_TOOL_TABS: NavTab[] = [
+  { id: 'practice', label: 'Practice', icon: 'clock' },
+];
+
+function AppInner({ session, dark, setDark, isAdmin, role, banner }: AppInnerProps) {
   const userId = session?.user?.id ?? '';
   // Seeds the student name on practice reports so printouts carry a real name
   const userName = session?.user?.email?.split('@')[0] ?? 'Me';
@@ -90,10 +101,15 @@ function AppInner({ session, dark, setDark, isAdmin, banner }: AppInnerProps) {
   const [showInfo, setShowInfo] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
-  const tabs: NavTab[] = [
-    ...BASE_TABS,
-    ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: 'users' as const }] : []),
-  ];
+  const isStudent = role === 'student';
+
+  const tabs: NavTab[] = isStudent
+    ? STUDENT_BASE_TABS
+    : [
+        ...BASE_TABS,
+        ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: 'users' as const }] : []),
+      ];
+  const toolTabs: NavTab[] = isStudent ? STUDENT_TOOL_TABS : TOOL_TABS;
 
   function navigate(tabId: ExamSession['activeTab']) {
     dispatch({ type: 'SET_ACTIVE_TAB', payload: tabId });
@@ -105,6 +121,7 @@ function AppInner({ session, dark, setDark, isAdmin, banner }: AppInnerProps) {
   return (
     <AppShell
       tabs={tabs}
+      toolTabs={toolTabs}
       activeTab={activeTab}
       onNavigate={navigate}
       onShowInfo={() => setShowInfo(true)}
@@ -122,12 +139,17 @@ function AppInner({ session, dark, setDark, isAdmin, banner }: AppInnerProps) {
         <Suspense fallback={<CenteredLoader />}>
           {showProfile && session ? (
             <ProfileView user={session.user} onBack={() => setShowProfile(false)} />
+          ) : isStudent ? (
+            <>
+              {activeTab === 'history' && <HistoryView userId={userId} role="student" />}
+              {activeTab === 'practice' && <PracticeView userId={userId} userName={userName} />}
+            </>
           ) : (
             <>
               {activeTab === 'setup' && <ExamSetup userId={userId} />}
               {activeTab === 'grade' && <GradingView />}
               {activeTab === 'report' && <ReportView userId={userId} />}
-              {activeTab === 'history' && <HistoryView userId={userId} />}
+              {activeTab === 'history' && <HistoryView userId={userId} role="teacher" />}
               {activeTab === 'analytics' && <AnalyticsView userId={userId} />}
               {activeTab === 'admin' && isAdmin && <AdminPanel adminEmail={env.adminEmail} />}
               {activeTab === 'question-bank' && <QuestionBankView userId={userId} onBack={() => navigate('setup')} />}
@@ -153,6 +175,12 @@ export default function App() {
   const [accessStatus, setAccessStatus] = useState<'loading' | 'ok' | 'pending' | 'revoked' | 'expired'>('loading');
   // Landing page only on wide screens; phones go straight to login
   const [showAuth, setShowAuth] = useState(() => window.innerWidth < 1024);
+  // Portal picked on the login/signup form — used to file new access requests
+  // under the right role and to catch someone signing in on the wrong portal.
+  const [role, setRole] = useState<UserRole>('teacher');
+  // The account's actual role once access has been checked (drives which tabs AppInner shows)
+  const [resolvedRole, setResolvedRole] = useState<UserRole>('teacher');
+  const [roleError, setRoleError] = useState('');
 
   useEffect(() => {
     if (!supabase) { setSession(null); return; }
@@ -199,15 +227,29 @@ export default function App() {
 
     async function checkAccess(s: Session) {
       const isAdmin = env.adminEmail && s.user.email === env.adminEmail;
-      if (isAdmin) { setAccessStatus('ok'); return; }
+      if (isAdmin) { setResolvedRole('teacher'); setAccessStatus('ok'); return; }
 
       try {
         const access = await getMyAccess(s.user.id);
         if (!access) {
-          await createAccessRequest(s.user.id, s.user.email ?? '');
+          // First login after signup — the role chosen on the signup form was
+          // stashed under the email since no access row existed yet to hold it.
+          const pending = (readString(storageKeys.pendingRole(s.user.email ?? '')) as UserRole | null) ?? role;
+          await createAccessRequest(s.user.id, s.user.email ?? '', pending);
+          setResolvedRole(pending);
           setAccessStatus('pending');
           return;
         }
+
+        // Caught the wrong portal: the account is registered under a different
+        // role than the one selected on the login screen.
+        if (access.role !== role) {
+          await supabase!.auth.signOut();
+          setRoleError(`This account is registered as a ${access.role}. Please use the ${access.role} login.`);
+          return;
+        }
+
+        setResolvedRole(access.role);
         if (access.status === 'revoked') { setAccessStatus('revoked'); return; }
         if (access.status === 'pending') { setAccessStatus('pending'); return; }
         const expired = access.trial_ends_at ? new Date(access.trial_ends_at) < new Date() : false;
@@ -215,12 +257,13 @@ export default function App() {
       } catch {
         // Access table unreachable — don't lock a signed-in user out of local data
         setAuthUnreachable(true);
+        setResolvedRole(role);
         setAccessStatus('ok');
       }
     }
 
     checkAccess(session);
-  }, [session]);
+  }, [session, role]);
 
   if (session === undefined) {
     return <FullScreenLoader />;
@@ -243,7 +286,7 @@ export default function App() {
     return (
       <ExamProvider initialTab={hasPracticeInProgress('') ? 'practice' : undefined}>
         <PracticeProvider userId="">
-          <AppInner session={null} dark={dark} setDark={setDark} banner={banner} />
+          <AppInner session={null} dark={dark} setDark={setDark} role="teacher" banner={banner} />
         </PracticeProvider>
       </ExamProvider>
     );
@@ -258,13 +301,16 @@ export default function App() {
     if (accessStatus === 'expired') return <ExpiredScreen userEmail={session.user.email} />;
 
     const isAdmin = !!(env.adminEmail && session.user.email === env.adminEmail);
-    // A discarded/reloaded tab must return to a running test, not to Setup
-    const resumeTab = hasPracticeInProgress(session.user.id) ? 'practice' as const : undefined;
+    // A discarded/reloaded tab must return to a running test, not to Setup;
+    // students land on Practice by default since Setup isn't available to them.
+    const resumeTab = hasPracticeInProgress(session.user.id)
+      ? 'practice' as const
+      : resolvedRole === 'student' ? 'practice' as const : undefined;
     return (
       <ExamProvider initialTab={resumeTab}>
         {/* keyed so a different account starts from a clean practice session */}
         <PracticeProvider userId={session.user.id} key={session.user.id}>
-          <AppInner session={session} dark={dark} setDark={setDark} isAdmin={isAdmin} banner={banner} />
+          <AppInner session={session} dark={dark} setDark={setDark} isAdmin={isAdmin} role={resolvedRole} banner={banner} />
         </PracticeProvider>
       </ExamProvider>
     );
@@ -277,5 +323,12 @@ export default function App() {
       </Suspense>
     );
   }
-  return <AuthGate banner={banner} />;
+  return (
+    <AuthGate
+      banner={banner}
+      role={role}
+      onRoleChange={(r) => { setRole(r); setRoleError(''); }}
+      roleError={roleError}
+    />
+  );
 }

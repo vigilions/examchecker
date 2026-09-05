@@ -48,4 +48,10 @@ export const storageKeys = {
   /** The in-progress practice session, so a refresh mid-test doesn't lose it. */
   practice: (userId: string) => (userId ? `practice-session-${userId}` : 'practice-session'),
   darkMode: 'dark-mode',
+  /**
+   * Role chosen on the signup form, stashed until the access row is actually
+   * created (that happens lazily on first login after email verification —
+   * see App.tsx's checkAccess). Cleared once consumed.
+   */
+  pendingRole: (email: string) => `pending-role-${email.toLowerCase()}`,
 };

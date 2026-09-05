@@ -2,11 +2,43 @@ import { useState, type ReactNode } from 'react';
 import { supabase } from '../../services/data/supabase';
 import { Logo, Wordmark } from '../../app/AppShell';
 import { Button, Icon, TextInput, inputClass } from '../../components/ui';
+import type { UserRole } from '../../services/data/access';
+import { storageKeys, writeString } from '../../services/storage';
 
 type View = 'login' | 'signup' | 'forgot' | 'verify-sent' | 'reset-sent' | 'phone-otp';
 type Method = 'email' | 'phone';
 
-export function AuthGate({ banner }: { banner?: ReactNode }) {
+interface AuthGateProps {
+  banner?: ReactNode;
+  role: UserRole;
+  onRoleChange: (role: UserRole) => void;
+  /** Shown on the login view after App.tsx signs a user out for picking the wrong portal. */
+  roleError?: string;
+}
+
+/** Teacher/Student portal picker — shared by the login and signup views. */
+function RoleToggle({ role, onChange }: { role: UserRole; onChange: (r: UserRole) => void }) {
+  return (
+    <div className="flex rounded-xl border border-ink-200 dark:border-ink-700 overflow-hidden mb-5">
+      {(['teacher', 'student'] as UserRole[]).map(r => (
+        <button
+          key={r}
+          type="button"
+          onClick={() => onChange(r)}
+          className={`flex-1 py-2 text-sm font-medium transition-colors capitalize ${
+            role === r
+              ? 'bg-accent-700 text-white'
+              : 'text-ink-600 dark:text-ink-400 hover:bg-ink-50 dark:hover:bg-ink-800'
+          } ${r === 'student' ? 'border-l border-ink-200 dark:border-ink-700' : ''}`}
+        >
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function AuthGate({ banner, role, onRoleChange, roleError }: AuthGateProps) {
   const [view, setView] = useState<View>('login');
   const [method, setMethod] = useState<Method>('email');
   const [email, setEmail] = useState('');
@@ -15,7 +47,7 @@ export function AuthGate({ banner }: { banner?: ReactNode }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(roleError ?? '');
 
   function resetForm(nextView: View) {
     setError('');
@@ -50,6 +82,9 @@ export function AuthGate({ banner }: { banner?: ReactNode }) {
     setLoading(true);
     setError('');
     try {
+      // The access row isn't created until first login (see App.tsx's
+      // checkAccess), so stash the chosen role under the email until then.
+      writeString(storageKeys.pendingRole(email), role);
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) {
         setError(error.message);
@@ -225,6 +260,7 @@ export function AuthGate({ banner }: { banner?: ReactNode }) {
       <Screen banner={banner}>
         <h1 className="font-display text-2xl font-semibold text-ink-900 dark:text-ink-100 mb-1 tracking-tight">Create account</h1>
         <p className="text-ink-500 dark:text-ink-400 text-sm mb-6">Submit a request — once approved, you'll receive access to ExamChecker.</p>
+        <RoleToggle role={role} onChange={onRoleChange} />
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ink-700 dark:text-ink-300 mb-1">Email</label>
@@ -258,6 +294,8 @@ export function AuthGate({ banner }: { banner?: ReactNode }) {
         <Wordmark />
       </div>
       <p className="text-ink-500 dark:text-ink-400 text-sm mb-5">Sign in to continue</p>
+
+      <RoleToggle role={role} onChange={onRoleChange} />
 
       <div className="flex rounded-xl border border-ink-200 dark:border-ink-700 overflow-hidden mb-5">
         {(['email', 'phone'] as Method[]).map(m => (

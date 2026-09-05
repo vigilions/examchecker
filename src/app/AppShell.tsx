@@ -15,7 +15,8 @@ export interface NavTab {
   icon: IconName;
 }
 
-const TOOL_TABS: NavTab[] = [
+/** Full tool-pill set — teacher accounts get all three; filtered per-role in App.tsx. */
+export const TOOL_TABS: NavTab[] = [
   { id: 'practice', label: 'Practice', icon: 'clock' },
   { id: 'question-bank', label: 'Upload Questions', icon: 'upload' },
   { id: 'question-paper', label: 'Question Paper', icon: 'document' },
@@ -23,6 +24,7 @@ const TOOL_TABS: NavTab[] = [
 
 interface AppShellProps {
   tabs: NavTab[];
+  toolTabs?: NavTab[];
   activeTab: TabId;
   onNavigate: (tab: TabId) => void;
   onShowInfo: () => void;
@@ -55,7 +57,7 @@ export function Wordmark({ light = false }: { light?: boolean }) {
 }
 
 export function AppShell({
-  tabs, activeTab, onNavigate, onShowInfo, onToggleProfile, profileOpen, dark, setDark, banner, children,
+  tabs, toolTabs = TOOL_TABS, activeTab, onNavigate, onShowInfo, onToggleProfile, profileOpen, dark, setDark, banner, children,
 }: AppShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -117,7 +119,7 @@ export function AppShell({
 
           <div className="mx-4 my-2 border-t border-dashed border-ink-300 dark:border-ink-700" />
 
-          {TOOL_TABS.map(tab => (
+          {toolTabs.map(tab => (
             <button key={tab.id} onClick={() => navigate(tab.id)} className={drawerItem(activeTab === tab.id)}>
               <Icon name={tab.icon} className="w-4 h-4 shrink-0" />
               {tab.label}
@@ -169,7 +171,7 @@ export function AppShell({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {TOOL_TABS.map(tab => (
+          {toolTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => navigate(tab.id)}
